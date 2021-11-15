@@ -1,15 +1,16 @@
 import api.FakeInterceptor;
 import api.ForecastServiceImpl;
+import model.Forecast;
 import okhttp3.OkHttpClient;
-import org.junit.After;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Test;
+import okhttp3.mockwebserver.MockResponse;
+import okhttp3.mockwebserver.MockWebServer;
+import org.junit.Rule;
+import org.junit.jupiter.api.*;
 import org.junit.platform.commons.logging.Logger;
 import org.junit.platform.commons.logging.LoggerFactory;
 import retrofit2.Retrofit;
 import retrofit2.converter.gson.GsonConverterFactory;
 import util.PathDate;
-
 import java.io.IOException;
 import java.time.LocalDate;
 import java.util.Random;
@@ -26,88 +27,99 @@ class AppTest {
     private static ForecastServiceImpl service ;
     LocalDate tomorrow = LocalDate.now().plusDays(1);
     private static final Logger LOGGER = LoggerFactory.getLogger(AppTest.class);
-
-    ;
-
+    static MockWebServer server = new MockWebServer();
 
 
-//
-    //private MockWebServer server = new MockWebServer();
 
     @BeforeAll
-    public static void setup() {
+    public static void setup() throws IOException {
 
+        LOGGER.info(() -> "Test Suite Setup STARTED");
 
-        LOGGER.info(() -> "Before Test Setup");
-
+        server.enqueue(new MockResponse().setBody("[{\"title\":\"MockWebServer\", \"location_type\":\"City\", \"woeid\":44418, \"latt_long\":\"51.506321,-0.12714\"}]"));
+        server.start();
 
         final OkHttpClient client = new OkHttpClient.Builder()
-                .addInterceptor(new FakeInterceptor())
+                .addNetworkInterceptor(new FakeInterceptor())
                 .build();
 
         Retrofit retrofit = new Retrofit.Builder()
-                .baseUrl("https://www.metaweather.com")
+                .baseUrl(server.url("/"))
                 .addConverterFactory(GsonConverterFactory.create())
                 .client(client)
                 .build();
 
         service = new ForecastServiceImpl(retrofit);
 
+
+
+
+        LOGGER.info(() -> "Test Suite Setup FINISHED");
+
     }
 
-    @After
-    public void teardown() throws IOException {
-        //server.shutdown();
+    @AfterAll
+    public static void tearDown() throws IOException {
+
+        server.shutdown();
+
     }
 
 
-    @Test
+        @Test
+    @DisplayName("Test1: Valid city and Forecast")
     void testValidCityForecastOutput() throws IOException {
 
-        LOGGER.info(() -> "testValidCityForecastOutput Started");
+        LOGGER.info(() -> "Test1 Started");
 
         try {
 
             // Given OK city string
             validCity =  validCities[r.nextInt(validCities.length)];
 
-            // When I call weather api and get a response
-            String responseSting = service.getForecast(validCity,tomorrow);
-            System.out.println(responseSting);
+            // When I call weather api and get a response and format it as a string
+            String responseString = service.getForecast(validCity,tomorrow);
+            System.out.println(responseString);
 
-            String [] splits  = responseSting.split("\\R");
+            String [] actualForecast  = responseString.split("\\R");
 
+            PathDate pathDate = new PathDate(tomorrow);
+
+            Forecast expectedForecast  = new Forecast();
+            expectedForecast.setId(5749047877959680L);
+            expectedForecast.setWeatherState("Heavy SNOW");
+            expectedForecast.setTemperature(6.265000000000001);
+            expectedForecast.setWindSpeed(11.2);
+            expectedForecast.setHumidity(80);
 
 
             // Then
-            PathDate pathDate = new PathDate(tomorrow);
-            assertEquals(String.format("Weather on (%s) in Helsinki:", pathDate), splits[0]);
+            assertEquals(String.format("Weather on (%s) in Helsinki:", pathDate), actualForecast[0]);
             // AND
-            assertEquals("Heavy SNOW", splits[1]);
+            assertEquals(expectedForecast.getWeatherState(), actualForecast[1]);
             // AND
-            assertEquals("Temp: 6.3 °C", splits[2]);
+            assertEquals(String.format("Temp: %.1f °C",expectedForecast.getTemperature() ) , actualForecast[2]);
             // AND
-            assertEquals("Wind: 11.2 mph", splits[3]);
+            assertEquals(String.format("Wind: %.1f mph",expectedForecast.getWindSpeed() ) , actualForecast[3]);
             // AND
-            assertEquals("Humidity: 80%", splits[4]);
+            assertEquals(String.format("Humidity: %d%%",expectedForecast.getHumidity() ) , actualForecast[4]);
 
-            LOGGER.info(() -> "Test Ended");
+            LOGGER.info(() -> "Test1 Ended");
 
 
         } catch (Exception e) {
-            LOGGER.error( () ->  String.format("Retrofit failed with error: %s", e.getMessage()));
+            LOGGER.error( () ->  String.format(e.getMessage()));
             System.exit(1);
         }
-
-
     }
 
 
-
     @Test
+    @DisplayName("Test2: City name not valid")
+    @Disabled
     void testInvalidCityForecastOutput() throws IOException {
 
-        LOGGER.info(() -> "Test testInvalidCityForecastOutput Started");
+        LOGGER.info(() -> "Test2 Started");
 
         try {
 
@@ -115,61 +127,49 @@ class AppTest {
             validCity =  invalidCities[r.nextInt(invalidCities.length)];
 
             // When I call weather api get a response
-            String responseSting = service.getForecast(validCity,tomorrow);
-            System.out.println(responseSting);
-
+            String responseString = service.getForecast(validCity,tomorrow);
+            //Next line shouldn't be reached
+            System.out.println(responseString);
 
 
         } catch (Exception e) {
             // Then
             assertEquals(String.format("Can't find city id for '%s'", validCity), e.getMessage());
-            LOGGER.error( () ->  String.format("Retrofit failed with error: %s - Will exit", e.getMessage()));
-            LOGGER.info(() -> "Test testInvalidCityForecastOutput Ended");
+            LOGGER.info( () ->  String.format(e.getMessage()));
+            LOGGER.info(() -> "Test2 Ended");
 
-
-            // commented out to prevent Exit during dev / testing
-            //System.exit(1);
         }
-
-
 
     }
 
     @Test
+    @DisplayName("Test3: Valid city name but no forecast")
+    @Disabled
     void testValidCityNoForecast() throws IOException {
 
-        LOGGER.info(() -> "Test testValidCityNoForecast Started");
+        LOGGER.info(() -> "Test3 Started");
 
         try {
-
 
             // Given valid city name but with bad forecast response
             validCity =  "hyderabad";
 
             // When I call weather api get a response
-            String responseSting = service.getForecast(validCity,tomorrow);
-            System.out.println(responseSting);
-
-
+            String responseString = service.getForecast(validCity,tomorrow);
+            System.out.println(responseString);
 
         } catch (Exception e) {
             // Then
             assertEquals(String.format("Can't get forecast for '%s'", validCity), e.getMessage());
-            LOGGER.error( () ->  String.format("Retrofit failed with error: %s - Will exit", e.getMessage()));
-            LOGGER.info(() -> "Test testValidCityNoForecast Ended");
+            LOGGER.info( () ->  String.format(e.getMessage()));
+            LOGGER.info(() -> "Test3 Ended");
 
-            // commented out to prevent Exit during dev / testing
-            //System.exit(1);
         }
-
-
 
     }
 
-    //Purpoose: Verify basic functioning for the REST API Retrofit app
-    // More tests to come: Status codes, JSON Payload, Media Type, other HTTP response headers in the response
-
-
-
+    // Purpose: Verify basic functioning for the REST API Retrofit app
+    // More tests can be added: Status codes, JSON Payload, Media Type,
+    // other HTTP responses, headers in the response, Schema validation...
 
 }
